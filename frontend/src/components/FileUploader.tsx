@@ -112,7 +112,7 @@ export default function FileUploader({ mode }: { mode: ToolMode }) {
                  page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
              }
              const bytes = await tempPdf.save();
-             bestBlob = new Blob([bytes], { type: "application/pdf" });
+             bestBlob = new Blob([bytes as BlobPart], { type: "application/pdf" });
              if (bytes.length > targetBytes) {
                 maxQ = midQ;
              } else {
