@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import "/node_modules/react-pdf/dist/esm/Page/AnnotationLayer.css";
-import "/node_modules/react-pdf/dist/esm/Page/TextLayer.css";
+import "react-pdf/dist/esm/Page/AnnotationLayer.css";
+import "react-pdf/dist/esm/Page/TextLayer.css";
 import {
   DndContext,
   closestCenter,
