@@ -4,8 +4,10 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import { UploadCloud, File as FileIcon, Trash2, ArrowRight, Scissors, Eye, X } from "lucide-react";
 import { PDFDocument } from "pdf-lib";
-import PdfGrid from "./PdfGrid";
 import PDFObject from "pdfobject";
+import dynamic from "next/dynamic";
+
+const PdfGrid = dynamic(() => import("./PdfGrid"), { ssr: false });
 
 export default function FileUploader() {
   const [files, setFiles] = useState<File[]>([]);
