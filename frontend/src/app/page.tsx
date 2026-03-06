@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import FileUploader from "@/components/FileUploader";
 import { Layers, FileOutput, FileImage, FileText, Minimize2, BringToFront, SplitSquareHorizontal } from "lucide-react";
 
@@ -25,6 +25,30 @@ const tools = [
 
 export default function Home() {
   const [selectedTool, setSelectedTool] = useState<ToolMode | null>(null);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace("#", "") as ToolMode | "";
+      if (hash && tools.some((t) => t.id === hash)) {
+        setSelectedTool(hash as ToolMode);
+      } else {
+        setSelectedTool(null);
+      }
+    };
+
+    handleHashChange(); // Check hash on mount
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  const selectTool = (toolId: ToolMode | null) => {
+    if (toolId) {
+      window.location.hash = toolId;
+    } else {
+      window.history.pushState("", document.title, window.location.pathname + window.location.search);
+      setSelectedTool(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
@@ -52,7 +76,7 @@ export default function Home() {
               return (
                 <button
                   key={tool.id}
-                  onClick={() => setSelectedTool(tool.id as ToolMode)}
+                  onClick={() => selectTool(tool.id as ToolMode)}
                   className="group relative bg-white dark:bg-dark-400 p-6 rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-xl hover:border-primary-500/30 transition-all duration-300 text-left flex flex-col h-full cursor-pointer hover:-translate-y-1"
                 >
                   <div className={`p-4 rounded-xl ${tool.color} w-max mb-6 group-hover:scale-110 transition-transform duration-300`}>
@@ -70,14 +94,17 @@ export default function Home() {
           </div>
         ) : (
           <div className="w-full flex flex-col items-center animate-in fade-in zoom-in-95 duration-300">
-            <button
-              onClick={() => setSelectedTool(null)}
-              className="text-primary-600 hover:text-primary-500 font-medium mb-8 flex items-center gap-2 hover:-translate-x-1 transition-transform bg-primary-50 dark:bg-primary-500/10 px-4 py-2 rounded-full cursor-pointer"
-            >
-              &larr; Back to Tools
-            </button>
+            {/* Sticky Back Button for easy access */}
+            <div className="w-full max-w-5xl mx-auto flex justify-start sticky top-4 z-50 mb-4 px-4">
+              <button
+                onClick={() => selectTool(null)}
+                className="text-primary-600 hover:text-primary-500 font-medium flex items-center gap-2 hover:-translate-x-1 transition-transform bg-white/90 dark:bg-dark-500/90 backdrop-blur-md px-4 py-2 rounded-full cursor-pointer shadow-xl border border-gray-200 dark:border-gray-700"
+              >
+                &larr; Back to Tools
+              </button>
+            </div>
             
-            <div className="text-center mb-8">
+            <div className="text-center mb-8 px-4">
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white capitalize">
                 {tools.find(t => t.id === selectedTool)?.name}
               </h2>
@@ -87,6 +114,16 @@ export default function Home() {
             </div>
 
             <FileUploader mode={selectedTool} />
+            
+            {/* Footer Back Button */}
+            <div className="mt-8 mb-12">
+              <button
+                onClick={() => selectTool(null)}
+                className="text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors underline underline-offset-4 cursor-pointer"
+              >
+                Return to Tool Selection
+              </button>
+            </div>
           </div>
         )}
       </main>
