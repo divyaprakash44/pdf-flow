@@ -15,6 +15,7 @@ export default function FileUploader({ mode }: { mode: ToolMode }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [pageRange, setPageRange] = useState("");
   const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [targetSizeKB, setTargetSizeKB] = useState("");
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
   const [selectedPages, setSelectedPages] = useState<number[]>([]);
@@ -73,6 +74,68 @@ export default function FileUploader({ mode }: { mode: ToolMode }) {
         setIsProcessing(false);
         return;
       }
+      
+      // Exact KB Compression
+      if (mode === "compress" && targetSizeKB) {
+        setIsProcessing(true);
+        try {
+          const targetBytes = parseFloat(targetSizeKB) * 1024;
+          if (isNaN(targetBytes) || targetBytes <= 0) throw new Error("Invalid target size");
+
+          const canvases = document.querySelectorAll('canvas.react-pdf__Page__canvas');
+          if (canvases.length === 0) {
+            alert("Please wait for all pages to render before compressing.");
+            setIsProcessing(false);
+            return;
+          }
+
+          let minQ = 0.05;
+          let maxQ = 0.95;
+          let bestBlob: Blob | null = null;
+          
+          for(let i = 0; i < 5; i++) {
+             const midQ = (minQ + maxQ) / 2;
+             const tempPdf = await PDFDocument.create();
+             for (const canvas of Array.from(canvases)) {
+                 const imgDataUrl = (canvas as HTMLCanvasElement).toDataURL('image/jpeg', midQ);
+                 const base64Data = imgDataUrl.split(',')[1];
+                 const binaryString = atob(base64Data);
+                 const len = binaryString.length;
+                 const imageBytes = new Uint8Array(len);
+                 for (let j = 0; j < len; j++) {
+                     imageBytes[j] = binaryString.charCodeAt(j);
+                 }
+                 const image = await tempPdf.embedJpg(imageBytes);
+                 const page = tempPdf.addPage([image.width, image.height]);
+                 page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+             }
+             const bytes = await tempPdf.save();
+             bestBlob = new Blob([bytes], { type: "application/pdf" });
+             if (bytes.length > targetBytes) {
+                maxQ = midQ;
+             } else {
+                minQ = midQ;
+             }
+          }
+          
+          if (bestBlob) {
+            const url = URL.createObjectURL(bestBlob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `compressed_${file.name.replace(".pdf", "")}_${targetSizeKB}KB.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          }
+        } catch (err) {
+          console.error(err);
+          alert("Compression failed.");
+        } finally {
+          setIsProcessing(false);
+        }
+        return;
+      }
 
       // Standard PDF manipulation
       if (selectedPages.length === 0) {
@@ -94,7 +157,7 @@ export default function FileUploader({ mode }: { mode: ToolMode }) {
       worker.onmessage = (e) => {
         if (e.data.jobId === jobId) {
           if (e.data.type === 'SUCCESS') {
-            const blob = new Blob([new Uint8Array(e.data.result)], { type: "application/pdf" });
+            const blob = new Blob([new Uint8Array(e.data.result) as BlobPart], { type: "application/pdf" });
             const url = URL.createObjectURL(blob);
             
             const link = document.createElement("a");
@@ -123,11 +186,12 @@ export default function FileUploader({ mode }: { mode: ToolMode }) {
   const handleMerge = async () => {
     if (files.length < 2) return;
     
-    // Check if any non-PDFs/Images are included in merge
-    const hasUnsupportedMerge = files.some(f => 
-      f.type !== "application/pdf" && 
-      !f.type.startsWith("image/")
-    );
+    // Robust check for PDFs and Images regardless of missing Windows mimes
+    const hasUnsupportedMerge = files.some(f => {
+      const isPdf = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+      const isImg = f.type.startsWith("image/") || f.name.match(/\.(jpg|jpeg|png)$/i);
+      return !isPdf && !isImg;
+    });
     
     if (hasUnsupportedMerge) {
       alert("Please convert Office documents to PDF individually before merging.");
@@ -139,18 +203,20 @@ export default function FileUploader({ mode }: { mode: ToolMode }) {
       const mergedPdf = await PDFDocument.create();
       
       for (const file of files) {
-        if (file.type === "application/pdf") {
+        const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+        
+        if (isPdf) {
           const arrayBuffer = await file.arrayBuffer();
           const pdfDoc = await PDFDocument.load(arrayBuffer);
           const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
           copiedPages.forEach((page) => mergedPdf.addPage(page));
-        } else if (file.type.startsWith("image/")) {
+        } else if (file.type.startsWith("image/") || file.name.match(/\.(jpg|jpeg|png)$/i)) {
           const arrayBuffer = await file.arrayBuffer();
           const imageBytes = new Uint8Array(arrayBuffer);
           let image;
-          if (file.type === "image/jpeg" || file.type === "image/jpg") {
+          if (file.type === "image/jpeg" || file.type === "image/jpg" || file.name.match(/\.(jpg|jpeg)$/i)) {
             image = await mergedPdf.embedJpg(imageBytes);
-          } else if (file.type === "image/png") {
+          } else if (file.type === "image/png" || file.name.toLowerCase().endsWith(".png")) {
             image = await mergedPdf.embedPng(imageBytes);
           } else {
             continue; // Unsupported image
@@ -271,10 +337,10 @@ export default function FileUploader({ mode }: { mode: ToolMode }) {
               {files.length === 1 ? (
                 <button 
                   onClick={handleApplyChanges}
-                  disabled={isProcessing || (files[0].type === "application/pdf" && selectedPages.length === 0)}
+                  disabled={isProcessing || (files[0].type === "application/pdf" && selectedPages.length === 0 && mode !== "compress")}
                   className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-xl shadow-lg shadow-primary-500/20 transition-all font-medium cursor-pointer"
                 >
-                  {isProcessing ? "Processing..." : (files[0].type !== "application/pdf" ? "Convert to PDF" : "Save Changes")} 
+                  {isProcessing ? "Processing..." : (mode === "compress" ? "Compress PDF" : (files[0].type !== "application/pdf" ? "Convert to PDF" : "Save Changes"))} 
                   {files[0].type !== "application/pdf" ? <ArrowRight className="w-4 h-4 ml-1" /> : <Scissors className="w-4 h-4 ml-1" />}
                 </button>
               ) : (
@@ -314,6 +380,23 @@ export default function FileUploader({ mode }: { mode: ToolMode }) {
                   </button>
                 )}
               </div>
+              
+              {mode === "compress" && (
+                <div className="mt-4 p-4 bg-gray-50 dark:bg-dark-500/50 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm flex items-center justify-between animate-in fade-in">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Target File Size (KB)</label>
+                    <p className="text-xs text-gray-500">We will attempt to compress the PDF to match this size.</p>
+                  </div>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={targetSizeKB}
+                    onChange={(e) => setTargetSizeKB(e.target.value)}
+                    placeholder="e.g. 15"
+                    className="w-32 px-3 py-2 bg-white dark:bg-dark-400 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                  />
+                </div>
+              )}
 
               {/* PDF Grid Component */}
               {files[0].type === "application/pdf" ? (
