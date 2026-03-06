@@ -36,11 +36,47 @@ export default function FileUploader() {
   }, []);
 
   const handleApplyChanges = async () => {
-    if (files.length !== 1 || selectedPages.length === 0) return;
+    if (files.length !== 1) return;
 
     setIsProcessing(true);
     try {
       const file = files[0];
+      
+      // If it's not a PDF, send it to the backend for conversion
+      if (file.type !== "application/pdf") {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await fetch("http://localhost:8000/convert/office-to-pdf", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server conversion failed: ${await response.text()}`);
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `converted_${file.name.replace(/\.[^/.]+$/, "")}_${Date.now()}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        setIsProcessing(false);
+        return;
+      }
+
+      // Standard PDF manipulation
+      if (selectedPages.length === 0) {
+        setIsProcessing(false);
+        return;
+      }
+
       const arrayBuffer = await file.arrayBuffer();
       const pdfDoc = await PDFDocument.load(arrayBuffer);
 
@@ -71,6 +107,13 @@ export default function FileUploader() {
 
   const handleMerge = async () => {
     if (files.length < 2) return;
+    
+    // Check if any non-PDFs are included in merge
+    const hasNonPdf = files.some(f => f.type !== "application/pdf");
+    if (hasNonPdf) {
+      alert("Please convert Office documents to PDF individually before merging.");
+      return;
+    }
     
     setIsProcessing(true);
     try {
@@ -104,7 +147,13 @@ export default function FileUploader() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { "application/pdf": [".pdf"] },
+    accept: { 
+      "application/pdf": [".pdf"],
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+      "application/msword": [".doc"],
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
+      "application/vnd.ms-powerpoint": [".ppt"]
+    },
   });
 
   const removeFile = (index: number) => {
@@ -131,10 +180,10 @@ export default function FileUploader() {
         
         <div className="text-center z-10">
           <h3 className="text-2xl font-semibold mb-2">
-            {isDragActive ? "Drop PDFs here" : "Drag & drop PDFs here"}
+            {isDragActive ? "Drop files here" : "Drag & drop PDFs or Office Files"}
           </h3>
           <p className="text-gray-500 dark:text-gray-400">
-            or click to browse from your device
+            or click to browse from your device. Supports .pdf, .docx, .pptx
           </p>
         </div>
         <input {...getInputProps()} />
@@ -159,10 +208,11 @@ export default function FileUploader() {
               {files.length === 1 ? (
                 <button 
                   onClick={handleApplyChanges}
-                  disabled={isProcessing || selectedPages.length === 0}
+                  disabled={isProcessing || (files[0].type === "application/pdf" && selectedPages.length === 0)}
                   className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-xl shadow-lg shadow-primary-500/20 transition-all font-medium cursor-pointer"
                 >
-                  {isProcessing ? "Processing..." : "Save Changes"} <Scissors className="w-4 h-4 ml-1" />
+                  {isProcessing ? "Processing..." : (files[0].type !== "application/pdf" ? "Convert to PDF" : "Save Changes")} 
+                  {files[0].type !== "application/pdf" ? <ArrowRight className="w-4 h-4 ml-1" /> : <Scissors className="w-4 h-4 ml-1" />}
                 </button>
               ) : (
                 <button 
@@ -192,19 +242,28 @@ export default function FileUploader() {
                     </p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setPreviewFile(files[0])}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-dark-500 dark:hover:bg-dark-400 text-sm font-medium rounded-lg transition-colors cursor-pointer"
-                >
-                  <Eye className="w-4 h-4" /> Preview
-                </button>
+                {files[0].type === "application/pdf" && (
+                  <button 
+                    onClick={() => setPreviewFile(files[0])}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-dark-500 dark:hover:bg-dark-400 text-sm font-medium rounded-lg transition-colors cursor-pointer"
+                  >
+                    <Eye className="w-4 h-4" /> Preview
+                  </button>
+                )}
               </div>
 
               {/* PDF Grid Component */}
-              <PdfGrid 
-                file={files[0]} 
-                onPagesChange={setSelectedPages} 
-              />
+              {files[0].type === "application/pdf" ? (
+                <PdfGrid 
+                  file={files[0]} 
+                  onPagesChange={setSelectedPages} 
+                />
+              ) : (
+                <div className="w-full mt-6 py-12 text-center bg-gray-50 dark:bg-dark-500/50 rounded-2xl border border-gray-100 dark:border-gray-800/50">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Ready to convert</h3>
+                  <p className="text-gray-500 dark:text-gray-400">Click &quot;Convert to PDF&quot; to securely process this Office document.</p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid gap-3">
