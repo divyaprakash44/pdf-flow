@@ -1,29 +1,25 @@
 import { PDFDocument } from 'pdf-lib';
 
-/**
- * Worker to offload heavy PDF lib tasks from the UI thread.
- */
-
-self.addEventListener('message', async (e) => {
+self.addEventListener('message', async (e: MessageEvent) => {
   const { type, payload, jobId } = e.data;
 
   try {
     switch (type) {
-      case 'MERGE_PDFS':
+      case 'MERGE_PDFS': {
         const resultMerge = await handleMerge(payload.fileBuffers);
         self.postMessage({ type: 'SUCCESS', jobId, result: resultMerge });
         break;
-      
-      case 'APPLY_CHANGES':
+      }
+      case 'APPLY_CHANGES': {
         const resultApply = await handleApplyChanges(payload.fileBuffer, payload.selectedPages);
         self.postMessage({ type: 'SUCCESS', jobId, result: resultApply });
         break;
-        
+      }
       default:
         self.postMessage({ type: 'ERROR', jobId, error: 'Unknown operation type' });
     }
   } catch (error: any) {
-    self.postMessage({ type: 'ERROR', jobId, error: error.message });
+    self.postMessage({ type: 'ERROR', jobId, error: error.message || 'Unknown error occurred in worker' });
   }
 });
 
