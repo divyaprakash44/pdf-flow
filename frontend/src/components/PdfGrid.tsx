@@ -1,7 +1,10 @@
+```javascript
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import "/node_modules/react-pdf/dist/esm/Page/AnnotationLayer.css";
+import "/node_modules/react-pdf/dist/esm/Page/TextLayer.css";
 import {
   DndContext,
   closestCenter,
@@ -19,23 +22,14 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import "react-pdf/dist/esm/Page/TextLayer.css";
-import { Trash2, GripVertical } from "lucide-react";
+import { Trash2, GripVertical, Download } from "lucide-react";
+import html2canvas from 'html2canvas';
 
 // Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface PageItem {
   id: string;
-  pageNumber: number;
-  originalIndex: number;
-}
-
-interface SortablePageProps {
-  item: PageItem;
-  fileUrl: string;
-  onRemove: (id: string) => void;
 }
 
 function SortablePage({ item, fileUrl, onRemove }: SortablePageProps) {
