@@ -78,29 +78,41 @@ export default function FileUploader() {
       }
 
       const arrayBuffer = await file.arrayBuffer();
-      const pdfDoc = await PDFDocument.load(arrayBuffer);
-
-      const modifiedPdf = await PDFDocument.create();
       
-      // selectedPages contains the original indices in the new order
-      const copiedPages = await modifiedPdf.copyPages(pdfDoc, selectedPages);
-      copiedPages.forEach((page) => modifiedPdf.addPage(page));
+      const worker = new Worker(new URL('../workers/pdfWorker.ts', import.meta.url));
+      const jobId = Date.now().toString();
 
-      const modifiedPdfFile = await modifiedPdf.save();
-      const blob = new Blob([new Uint8Array(modifiedPdfFile)], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `modified_${file.name.replace(".pdf", "")}_${Date.now()}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      worker.postMessage({
+        type: 'APPLY_CHANGES',
+        jobId,
+        payload: { fileBuffer: arrayBuffer, selectedPages }
+      });
+
+      worker.onmessage = (e) => {
+        if (e.data.jobId === jobId) {
+          if (e.data.type === 'SUCCESS') {
+            const blob = new Blob([new Uint8Array(e.data.result)], { type: "application/pdf" });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `modified_${file.name.replace(".pdf", "")}_${Date.now()}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          } else if (e.data.type === 'ERROR') {
+            console.error("Worker Error:", e.data.error);
+            alert(`An error occurred: ${e.data.error}`);
+          }
+          setIsProcessing(false);
+          worker.terminate();
+        }
+      };
+
     } catch (error) {
       console.error("Error modifying PDF:", error);
       alert("An error occurred while modifying the PDF.");
-    } finally {
       setIsProcessing(false);
     }
   };
@@ -108,9 +120,13 @@ export default function FileUploader() {
   const handleMerge = async () => {
     if (files.length < 2) return;
     
-    // Check if any non-PDFs are included in merge
-    const hasNonPdf = files.some(f => f.type !== "application/pdf");
-    if (hasNonPdf) {
+    // Check if any non-PDFs/Images are included in merge
+    const hasUnsupportedMerge = files.some(f => 
+      f.type !== "application/pdf" && 
+      !f.type.startsWith("image/")
+    );
+    
+    if (hasUnsupportedMerge) {
       alert("Please convert Office documents to PDF individually before merging.");
       return;
     }
@@ -120,10 +136,31 @@ export default function FileUploader() {
       const mergedPdf = await PDFDocument.create();
       
       for (const file of files) {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdfDoc = await PDFDocument.load(arrayBuffer);
-        const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
-        copiedPages.forEach((page) => mergedPdf.addPage(page));
+        if (file.type === "application/pdf") {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdfDoc = await PDFDocument.load(arrayBuffer);
+          const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+          copiedPages.forEach((page) => mergedPdf.addPage(page));
+        } else if (file.type.startsWith("image/")) {
+          const arrayBuffer = await file.arrayBuffer();
+          const imageBytes = new Uint8Array(arrayBuffer);
+          let image;
+          if (file.type === "image/jpeg" || file.type === "image/jpg") {
+            image = await mergedPdf.embedJpg(imageBytes);
+          } else if (file.type === "image/png") {
+            image = await mergedPdf.embedPng(imageBytes);
+          } else {
+            continue; // Unsupported image
+          }
+          
+          const page = mergedPdf.addPage([image.width, image.height]);
+          page.drawImage(image, {
+            x: 0,
+            y: 0,
+            width: image.width,
+            height: image.height,
+          });
+        }
       }
       
       const mergedPdfFile = await mergedPdf.save();
@@ -139,7 +176,7 @@ export default function FileUploader() {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Error merging PDFs:", error);
-      alert("An error occurred while merging the PDFs.");
+      alert("An error occurred while merging the files.");
     } finally {
       setIsProcessing(false);
     }
@@ -149,6 +186,8 @@ export default function FileUploader() {
     onDrop,
     accept: { 
       "application/pdf": [".pdf"],
+      "image/jpeg": [".jpg", ".jpeg"],
+      "image/png": [".png"],
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
       "application/msword": [".doc"],
       "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
