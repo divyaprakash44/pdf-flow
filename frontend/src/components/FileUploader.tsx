@@ -1,15 +1,16 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { useDropzone } from "react-dropzone";
+import { useDropzone, Accept } from "react-dropzone";
 import { UploadCloud, File as FileIcon, Trash2, ArrowRight, Scissors, Eye, X } from "lucide-react";
 import { PDFDocument } from "pdf-lib";
 import PDFObject from "pdfobject";
 import dynamic from "next/dynamic";
+import type { ToolMode } from "@/app/page";
 
 const PdfGrid = dynamic(() => import("./PdfGrid"), { ssr: false });
 
-export default function FileUploader() {
+export default function FileUploader({ mode }: { mode: ToolMode }) {
   const [files, setFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pageRange, setPageRange] = useState("");
@@ -184,17 +185,38 @@ export default function FileUploader() {
     }
   };
 
+  const getAcceptedTypes = (): Accept => {
+    switch (mode) {
+      case "compress":
+      case "pdf-to-img":
+      case "rearrange":
+      case "pdf-to-word":
+        return { "application/pdf": [".pdf"] };
+      case "img-to-pdf":
+        return { 
+          "image/jpeg": [".jpg", ".jpeg"],
+          "image/png": [".png"],
+          "image/webp": [".webp"]
+        };
+      case "word-to-pdf":
+        return {
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+          "application/msword": [".doc"],
+        };
+      case "merge":
+        return {
+          "application/pdf": [".pdf"],
+          "image/jpeg": [".jpg", ".jpeg"],
+          "image/png": [".png"]
+        };
+      default:
+        return { "application/pdf": [".pdf"] };
+    }
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 
-      "application/pdf": [".pdf"],
-      "image/jpeg": [".jpg", ".jpeg"],
-      "image/png": [".png"],
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
-      "application/msword": [".doc"],
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
-      "application/vnd.ms-powerpoint": [".ppt"]
-    },
+    accept: getAcceptedTypes(),
   });
 
   const removeFile = (index: number) => {
@@ -220,11 +242,11 @@ export default function FileUploader() {
         </div>
         
         <div className="text-center z-10">
-          <h3 className="text-2xl font-semibold mb-2">
-            {isDragActive ? "Drop files here" : "Drag & drop PDFs or Office Files"}
+          <h3 className="text-2xl font-semibold mb-2 capitalize">
+            {isDragActive ? "Drop files here" : `Drag & drop to ${mode.replace(/-/g, ' ')}`}
           </h3>
           <p className="text-gray-500 dark:text-gray-400">
-            or click to browse from your device. Supports .pdf, .docx, .pptx
+            or click to browse from your device.
           </p>
         </div>
         <input {...getInputProps()} />
