@@ -47,11 +47,13 @@ export default function FileUploader({ mode }: { mode: ToolMode }) {
       const file = files[0];
       
       // If it's not a PDF, send it to the backend for conversion
-      if (file.type !== "application/pdf") {
+      if (file.type !== "application/pdf" && mode !== "compress") {
         const formData = new FormData();
         formData.append("file", file);
 
-        const response = await fetch("http://localhost:8000/convert/office-to-pdf", {
+        const apiUrl = process.env.NEXT_PUBLIC_CONVERSION_API_URL || "http://localhost:8000";
+        
+        const response = await fetch(`${apiUrl}/convert/office-to-pdf`, {
           method: "POST",
           body: formData,
         });
